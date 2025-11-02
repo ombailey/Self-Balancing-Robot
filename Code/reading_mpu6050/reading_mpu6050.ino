@@ -1,3 +1,4 @@
+
 /*
   MPU6050 Raw
 
@@ -9,6 +10,7 @@
 */
 #include "I2Cdev.h"
 #include "MPU6050.h"
+#include <PID_v1.h>
 
 /* MPU6050 default I2C address is 0x68*/
 MPU6050 mpu;
@@ -31,6 +33,47 @@ int16_t gx, gy, gz;
 float LSBg = 16384;
 float LSBdps = 131;
 bool blinkState;
+double input, output;
+double setpoint = 0;
+double Kp = 1;
+double Ki = 0.5;
+double Kd = 0.1;
+float pitch;
+
+PID myPid(&input, &output, &setpoint, Kp, Ki, Kd, DIRECT);
+
+void Forward() {
+  // Motor A 
+  analogWrite(5, output);
+  analogWrite(6, 0);
+  // Motor B 
+  analogWrite(9, output);
+  analogWrite(10, 0);
+
+  Serial.println("Moving Forward");
+}
+
+void Reverse() {
+  // Motor A 
+  analogWrite(5, 0);
+  analogWrite(6, output*-1);
+  // Motor B 
+  analogWrite(9, 0);
+  analogWrite(10, output*-1);
+
+  Serial.println("Moving Reverse");
+}
+
+void Stop() {
+  // Motor A 
+  analogWrite(5, 0);
+  analogWrite(6, 0);
+  // Motor B 
+  analogWrite(9, 0);
+  analogWrite(10, 0);
+
+  Serial.println("Moving Reverse");
+}
 
 void setup() {
   /*--Start I2C interface--*/
@@ -79,6 +122,24 @@ void setup() {
 
   /*Configure board LED pin for output*/ 
   pinMode(LED_BUILTIN, OUTPUT);
+  
+  myPid.SetMode(AUTOMATIC);
+  myPid.SetSampleTime(10);
+  myPid.SetOutputLimits(-255, 255);
+
+  //  Initializing Motor Pins
+
+  pinMode(5, OUTPUT);
+  pinMode(6, OUTPUT);
+  pinMode(9, OUTPUT);
+  pinMode(10, OUTPUT);
+
+  // Turning off Motor Pints Initially
+
+  analogWrite(5, LOW);
+  analogWrite(6, LOW);
+  analogWrite(9, LOW);
+  analogWrite(10, LOW);
 }
 
 void loop() {
@@ -98,8 +159,21 @@ void loop() {
     float gx_ms2 = (gx/LSBdps)*radps;
     float gy_ms2 = (gy/LSBdps)*radps;
     float gz_ms2 = (gz/LSBdps)*radps;
+    float pitch = atan2(ax_ms2, sqrt(pow(ay_ms2,2) + pow(az_ms2,2)) * 180/PI);
+    input = pitch;
 
-
+  // pid computes new output
+    myPid.Compute();
+    Serial.print(input); Serial.print("=>"); Serial.print(output); Serial.print("\n");
+    if (input > 0 && input < 0.02) {        // If the Bot is falling 
+      if (output > 0) {                  // Falling towards front 
+        Forward();                     // Rotate the wheels forward 
+      } else if (output < 0) {           // Falling towards back
+        Reverse();                     // Rotate the wheels backward 
+      }
+    } else {                               // If Bot not falling
+    Stop();                            // Hold the wheels still
+    }
     Serial.print("a/g:\t");
     Serial.print("X-axis: \t"); Serial.print(ax_ms2); Serial.print(" m/s^2 \t");
     Serial.print("Y-axis: \t"); Serial.print(ay_ms2); Serial.print(" m/s^2 \t");
