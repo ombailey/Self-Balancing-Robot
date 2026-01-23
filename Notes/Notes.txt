@@ -1,0 +1,3 @@
+- When both motors are turned on, minimum for them to move is 200 PWM signal.
+- With one motor, minimum PWM signal is 175.
+- A little more than 3V used to supply the 200 PWM signal and about 5.8V supplies the 255 PWM signal.

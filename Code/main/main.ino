@@ -26,44 +26,40 @@ float derivative;
 float setpoint = 0;
 float output;
 float error;
-float kp = 8;
+float kp = 15;
 float ki = 0;
 float kd = 0;
 float pwmMultiplier = (255.0/90.0);
 float pwm;
-
-// Determining Angle due to accelerometer
-float tiltAngle(float angle, float ax_g, float az_g){
-  float alpha = 0.9;
-  float accAngle = atan2(ax_g,az_g) * r2d;
-  return alpha*(angle) + (1-alpha)*accAngle;
-};
+float deadband = 8;
 
 // Creating motor functions
 void Reverse(float pwm){
-  pwm = constrain(abs(pwm), 100, 255);
-  // Setting PWM on Pin 5 - PD5
-  OCR0B = pwm;
-
-  // Setting PWM on Pin 10 - PB2
+  PORTD = (1 << PD4) | (1 << PD7);
+  pwm = constrain(abs(pwm), 200,255);
+  OCR2A = pwm;
   OCR1B = pwm;
 };
 
 void Forward(float pwm){
-  pwm = constrain(abs(pwm), 100, 255);
-  // Setting PWM on Pin 9 - PB1
-  OCR1A = pwm;
+  PORTD = (1 << PD5) | (1 << PD6);
+  pwm = constrain(abs(pwm), 200,255);
+  OCR2A = pwm;
+  OCR1B = pwm;
+};
 
-  // Setting PWM on Pin 6 - PD6
-  OCR0A = pwm;
+void Stop(){
+  PORTD = ( 0 << PD4) | (0 << PD5) | (0 << PD6) | (0 << PD7);
+  OCR2A = 0;
+  OCR1B = 0;
 }
 
 float PID(float setpoint, float feedback, float kp, float ki, float kd, float timeInt){
   error = setpoint - feedback;
   integral += (error * timeInt);
   derivative = -gyDps;
-  output = ((kp * error) + (ki * integral) + (kd * derivative))* pwmMultiplier;
-  output = constrain(output,-255,255);
+  output = 200 + abs((kp * error) + (ki * integral) + (kd * derivative))/15;
+  output = constrain(output,200,255);
   prevError = error;
   Serial.println(output);
   return output;
@@ -75,11 +71,6 @@ void setup() {
   Serial.begin(9600);
   delay(100);
   prevTime = micros();
-  // Set ENA and ENB to HIGH on Motor Drivers
-  DDRB |= (1 << 3);
-  PORTB |= (1 << 3);
-  DDRD |= (1 << 3);
-  PORTD |= (1 << 3);
 
   // Turning on MPU 6050
   Wire.beginTransmission(mpu);
@@ -102,30 +93,14 @@ void setup() {
   gyBias = gyBiasRawAvg/131; 
   Serial.print("gyBias: "); Serial.println(gyBias);
 
-   // Setting PWM on Pin 5 - PD5
-  DDRD |= (1 << 5);
-  TCCR0A = (1 << 5) | (1 << 1) | (1 << 0);
-  TCCR0B = (1 << 1);
-  OCR0B = pwm;
+  // Configuring Motors Pins
+  DDRD |= (1 << PD4) | (1 << PD5) | (1 << PD6) | (1 << PD7); 
+  DDRB |= (1 << PB2) | (1 << PB3);
+  TCCR1A = (1 << COM1B1) | (1 << WGM10);
+  TCCR1B = (1 << WGM12) | (1 << CS11);
+  TCCR2A = (1 << COM2A1) | (1 << WGM20) | (1 << WGM21);
+  TCCR2B = (1 << CS21);
 
-  // Setting PWM on Pin 10 - PB2
-  DDRB |= (1 << 2);
-  TCCR1A = (1 << 5) | (1 << 0);
-  TCCR1B = (1 << 3) | ( 1 << 1);
-  OCR1B = pwm;
-
-    // Setting PWM on Pin 9 - PB1
-  DDRB |= (1 << 1);
-  TCCR1A = (1 << 7) | (1 << 0);
-  TCCR1B = (1 << 3) | (1 << 1);
-  OCR1A = pwm;
-
-  // Setting PWM on Pin 6 - PD6
-  DDRD |= (1 << 6);
-  TCCR0A = (1 << 7) | (1 << 1) | (1 << 0);
-  TCCR0B = (1 << 1);
-  OCR0A = pwm;
-  
 }
 
 void loop() {
@@ -141,7 +116,6 @@ void loop() {
   prevTime = nowTime;
 
   // Getting data from Accelerometer & Gyroscope
-
   ax = Wire.read() << 8 | Wire.read();
   ay = Wire.read() << 8 | Wire.read();
   az = Wire.read() << 8 | Wire.read();
@@ -151,22 +125,21 @@ void loop() {
   gz = Wire.read() << 8 | Wire.read();
 
   // Calculating current angle of the robot
-  gyDps = (gy/gyroLsbSens) - gyBias; // degrees per second
   float ax_g = ax/accLsbSens;
-  float az_g = az/accLsbSens;
-  if (abs(gyDps) < 0.05){ // Remove Total RMS Noise
-    gyDps = 0;
-  };
-  angleY += gyDps * dt;
-  angleY = tiltAngle(angleY, ax_g, az_g);
+  float ay_g = ay/accLsbSens ;
+  float az_g = az/accLsbSens ;
 
-  // Serial.print("Y-Angular Velocity: "); Serial.println(gyroY);
-  Serial.print("AngleY: "); Serial.println(angleY);
-  pwm = PID(setpoint, angleY, kp, ki, kd, dt);
-  if (pwm > 0){
+  float angleBias = 4.00;
+  float pitch = (atan2(ax_g,sqrt(pow(az_g,2) + pow(ay_g,2))) * r2d) - angleBias;
+
+  Serial.print("Pitch: "); Serial.println(pitch);
+  pwm = PID(setpoint, pitch, kp, ki, kd, dt);
+  if (pitch < -deadband){
     Forward(pwm);
-  } else {
+  } else if (pitch > deadband) {
     Reverse(pwm);
+  } else {
+    Stop();
   };
 
   };
