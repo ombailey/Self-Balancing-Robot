@@ -30,8 +30,8 @@ double setpoint = 0;
 // Original kp 15, ki, 56, kd 0.3
 double Kp = 17, Ki = 50, Kd = 0.5;
 float pitch;
-const int IN1 = 5, IN2 = 6, IN3 = 9, IN4 = 10;
-const int ENA = 3, ENB = 11;
+const int IN1 = 4, IN2 = 5, IN3 = 6, IN4 = 7;
+const int ENA = 10, ENB = 11;
 PID myPID(&input, &output, &setpoint, Kp, Ki, Kd, DIRECT);
 
 /*------Interrupt detection routine------*/
