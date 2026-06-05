@@ -1,4 +1,4 @@
-# Self-Balancing Robot (State-Space Control)
+# Self-Balancing Robot
 
 ## Overview
 This project implements a two-wheeled self-balancing robot using a microcontroller, MPU6050 and PID control. The system models an inverted pendulum and applies state-space control methods to achieve upright stabilization on real hardware.
