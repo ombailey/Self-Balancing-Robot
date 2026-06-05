@@ -31,7 +31,7 @@ float derivative;
 float setpoint = 1.90;
 float output;
 float error;
-float kpScale = 6.3;
+float kpScale = 6.5;
 float kdScale = 4.15;
 float kp = -13.41622596;
 float kd = -0.95875022;
