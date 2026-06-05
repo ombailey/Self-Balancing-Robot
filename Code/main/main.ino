@@ -4,7 +4,8 @@ const int mpu = 0x68; //mpu I2C address
 const float gyroLsbSens = 131; // LSB/degrees/second
 const float accLsbSens = 16384; // LSB/g
 const float g = 9.81; // m^2/s
-const float alpha = 0.95;
+const float alpha = 0.985;
+const unsigned long loopPeriod = 2000; // 500 Hz
 int16_t ax;
 int16_t ay;
 int16_t az;
@@ -27,12 +28,14 @@ const float d2r = PI/180;
 float prevError = 0;
 float integral = 0;
 float derivative;
-float setpoint = 0;
+float setpoint = 1.90;
 float output;
 float error;
-float kp = 35;
-float ki = 40;
-float kd = 0.55;
+float kpScale = 6.3;
+float kdScale = 4.15;
+float kp = -13.41622596;
+float kd = -0.95875022;
+float ki = 0;
 float pwm;
 float prop;
 
@@ -56,22 +59,22 @@ void Brake(){
   OCR1B = 0;
 }
 
-float PID(float setpoint, float feedback, float kp, float ki, float kd, float dt){
-  error = setpoint - feedback;
-  integral += (error * dt);
+float PolePlace(float setpoint, float currentAngle, float gyDps, float kp, float ki, float kd){
+  error = setpoint - currentAngle;
   derivative = -gyDps;
-
-  output = kp*error + constrain(ki*integral,-100,100) + kd * derivative;
+  integral += error * dt;
+  integral = constrain(integral,-50,50);
+  output = -(kp*error*kpScale + ki*integral+ kd*derivative*kdScale);
   output = constrain(output,-255,255);
   prevError = error;
   return output;
 };
 
 void setup() {
+
   Wire.begin();
   Wire.setClock(400000);
-  Serial.begin(9600);
-  delay(100);
+  Serial.begin(115200);
 
   // Turning on MPU 6050
   Wire.beginTransmission(mpu);
@@ -91,7 +94,6 @@ void setup() {
 
   gyBiasRawAvg = gyBiasRaw / 5000.0;
   gyBias = gyBiasRawAvg/gyroLsbSens; 
-  Serial.println(gyBias);
 
   // Configuring Motors Pins
   DDRD |= (1 << PD4) | (1 << PD5) | (1 << PD6) | (1 << PD7); 
@@ -100,9 +102,20 @@ void setup() {
   TCCR1B = (1 << WGM12) | (1 << CS11);
   TCCR2A = (1 << COM2A1) | (1 << WGM20) | (1 << WGM21);
   TCCR2B = (1 << CS21);
+
+  prevTime = micros();
 };
 
 void loop() {
+
+  nowTime = micros();
+
+  if (nowTime- prevTime < loopPeriod) {
+    return;
+    }
+  
+  prevTime += loopPeriod;
+  dt = 0.002;
 
   // Creating bus with Gyroscope Y-Axis Register
   Wire.beginTransmission(mpu);
@@ -110,10 +123,6 @@ void loop() {
   Wire.endTransmission(false);
   Wire.requestFrom(mpu,14);
   
-  nowTime = micros();
-  dt = (nowTime - prevTime) / 1000000.0;
-  prevTime = nowTime;
-
   // Getting data from Accelerometer & Gyroscope
   ax = Wire.read() << 8 | Wire.read();
   ay = Wire.read() << 8 | Wire.read();
@@ -128,20 +137,18 @@ void loop() {
   float ay_g = ay/accLsbSens ;
   float az_g = az/accLsbSens ;
   gyDps = -(gy-gyBiasRawAvg)/gyroLsbSens;
-  // if (abs(gyDps) <= 0.05){
-  //   gyDps = 0;
-  // };
   gyAngle += gyDps *dt;
   float angleBias = 4.00;
-  float pitch = (atan2(ax_g,sqrt((az_g*az_g) + (ay_g*ay_g))) * r2d) - angleBias;
+
+  // float pitch = (atan2(ax_g,sqrt((az_g*az_g) + (ay_g*ay_g))) * r2d) - angleBias;
+  float pitch = (atan2(ax_g,sqrt((az_g*az_g) + (ay_g*ay_g))) * r2d);
   compAngle = alpha*(compAngle + (gyDps *dt)) + (1.0-alpha)*pitch;
-  // Serial.print("Angle: "); Serial.println(gyDps);
-  Serial.print("Angle: "); Serial.println(compAngle);
-  pwm = PID(setpoint, compAngle, kp, ki, kd, dt);
+  pwm = PolePlace(setpoint, compAngle, gyDps, kp, ki, kd);
+
   if (pwm > 0){
     Forward(pwm);  
   } else if (pwm < 0) {
     Reverse(pwm);
   } 
-  };
+};
 
